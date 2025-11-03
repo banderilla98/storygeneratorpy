@@ -3,13 +3,13 @@ from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Cookie, Response, BackgroundTasks
 from sqlalchemy.orm import Session
+
 from db.database import get_db, SessionLocal
 from models.story import Story, StoryNode
 from models.job import StoryJob
 from schemas.story import (
-CompleteStoryResponse, CompleteStoryNodeResponse, CreateStoryRequest
+    CompleteStoryResponse, CompleteStoryNodeResponse, CreateStoryRequest
 )
-
 from schemas.job import StoryJobResponse
 from core.story_generator import StoryGenerator
 
@@ -22,6 +22,7 @@ def get_session_id(session_id: Optional[str] = Cookie(None)):
     if not session_id:
         session_id = str(uuid.uuid4())
     return session_id
+
 
 @router.post("/create", response_model=StoryJobResponse)
 def create_story(
@@ -36,16 +37,14 @@ def create_story(
     job_id = str(uuid.uuid4())
 
     job = StoryJob(
-        job_id = job_id,
-        session_id = session_id,
+        job_id=job_id,
+        session_id=session_id,
         theme=request.theme,
-        status = "pending"
+        status="pending"
     )
-
     db.add(job)
     db.commit()
 
-    #TODO: add background tasks, generate story
     background_tasks.add_task(
         generate_story_task,
         job_id=job_id,
@@ -70,7 +69,7 @@ def generate_story_task(job_id: str, theme: str, session_id: str):
 
             story = StoryGenerator.generate_story(db, session_id, theme)
 
-            job.story_id = story.id
+            job.story_id = story.id  # todo: update story id
             job.status = "completed"
             job.completed_at = datetime.now()
             db.commit()
@@ -80,10 +79,10 @@ def generate_story_task(job_id: str, theme: str, session_id: str):
             job.error = str(e)
             db.commit()
     finally:
-            db.close()
+        db.close()
 
 
-@router.get("/{story_id}/complete",response_model=CompleteStoryResponse)
+@router.get("/{story_id}/complete", response_model=CompleteStoryResponse)
 def get_complete_story(story_id: int, db: Session = Depends(get_db)):
     story = db.query(Story).filter(Story.id == story_id).first()
     if not story:
@@ -92,11 +91,11 @@ def get_complete_story(story_id: int, db: Session = Depends(get_db)):
     complete_story = build_complete_story_tree(db, story)
     return complete_story
 
+
 def build_complete_story_tree(db: Session, story: Story) -> CompleteStoryResponse:
     nodes = db.query(StoryNode).filter(StoryNode.story_id == story.id).all()
 
     node_dict = {}
-
     for node in nodes:
         node_response = CompleteStoryNodeResponse(
             id=node.id,
@@ -107,16 +106,15 @@ def build_complete_story_tree(db: Session, story: Story) -> CompleteStoryRespons
         )
         node_dict[node.id] = node_response
 
-        root_node = next((node for node in nodes if node.is_root), None)
+    root_node = next((node for node in nodes if node.is_root), None)
+    if not root_node:
+        raise HTTPException(status_code=500, detail="Story root node not found")
 
-        if not root_node:
-            raise HTTPException(status_code=500, detail="Story root node not found")
-
-        return CompleteStoryResponse(
-            id=story.id,
-            title=story.title,
-            session_id=story.session_id,
-            created_at=story.created_at,
-            root_node=node_dict[root_node.id],
-            all_nodes=node_dict
-        )
+    return CompleteStoryResponse(
+        id=story.id,
+        title= story.title,
+        session_id=story.session_id,
+        created_at=story.created_at,
+        root_node=node_dict[root_node.id],
+        all_nodes=node_dict
+    )

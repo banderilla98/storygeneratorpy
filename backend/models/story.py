@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 
 from db.database import Base
 
+
 class Story(Base):
     __tablename__ = "stories"
 
@@ -13,6 +14,7 @@ class Story(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     nodes = relationship("StoryNode", back_populates="story")
+
 
 class StoryNode(Base):
     __tablename__ = "story_nodes"
@@ -25,4 +27,4 @@ class StoryNode(Base):
     is_winning_ending = Column(Boolean, default=False)
     options = Column(JSON, default=list)
 
-    story = relationship(argument="Story", back_populates="nodes")
+    story = relationship("Story", back_populates="nodes")
