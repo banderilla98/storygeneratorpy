@@ -1,5 +1,4 @@
 from sqlalchemy.orm import Session
-
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
@@ -9,23 +8,51 @@ from models.story import Story, StoryNode
 from core.models import StoryLLMResponse, StoryNodeLLM
 from dotenv import load_dotenv
 import os
-
+import requests
 load_dotenv()
 
 class StoryGenerator:
 
     @classmethod
     def _get_llm(cls):
-        openai_api_key = os.getenv("CHOREO_OPENAI_CONNECTION_OPENAI_API_KEY")
-        serviceurl = os.getenv("CHOREO_OPENAI_CONNECTION_SERVICEURL")
-        serviceurl = os.getenv("CHOREO_OPENAI_CONNECTION_SERVICEURL")
-        consumerkey = os.getenv("CHOREO_OPENAI_CONNECTION_CONSUMERKEY")
-        consumersecret = os.getenv("CHOREO_OPENAI_CONNECTION_CONSUMERSECRET")
-        tokenurl = os.getenv("CHOREO_OPENAI_CONNECTION_TOKENURL")
+        """
+        Returns a ChatOpenAI instance configured for either:
+        1. Direct OpenAI API key
+        2. Choreo-managed OAuth credentials
+        """
+        api_key = os.getenv("CHOREO_OPENAI_CONNECTION_OPENAI_API_KEY")
+        service_url = os.getenv("CHOREO_OPENAI_CONNECTION_SERVICEURL")
 
-        if openai_api_key and serviceurl:
-            return ChatOpenAI(model="gpt-4o-mini", api_key=openai_api_key, base_url=serviceurl)
+        consumer_key = os.getenv("CHOREO_OPENAI_CONNECTION_CONSUMERKEY")
+        consumer_secret = os.getenv("CHOREO_OPENAI_CONNECTION_CONSUMERSECRET")
+        token_url = os.getenv("CHOREO_OPENAI_CONNECTION_TOKENURL")
 
+        # 1️⃣ If we have a direct API key and service URL, use it
+        if api_key and service_url:
+            return ChatOpenAI(model="gpt-4o-mini", api_key=api_key, base_url=service_url)
+
+        # 2️⃣ If Choreo OAuth credentials exist, fetch a token first
+        if consumer_key and consumer_secret and token_url:
+            token_response = requests.post(
+                token_url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": consumer_key,
+                    "client_secret": consumer_secret,
+                },
+            )
+            token_response.raise_for_status()
+            access_token = token_response.json().get("access_token")
+            if not access_token:
+                raise ValueError("Failed to fetch access token from Choreo OAuth")
+
+            return ChatOpenAI(
+                model="gpt-4o-mini",
+                api_key=access_token,  # LangChain uses api_key for Bearer token
+                base_url=service_url
+            )
+
+        # 3️⃣ Default to standard OpenAI if nothing else is set
         return ChatOpenAI(model="gpt-4o-mini")
 
     @classmethod
